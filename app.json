@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "BonaPay",
+    "slug": "BonaPay",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563eb"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bonapay.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563eb"
+      },
+      "package": "com.bonapay.app",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+     "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
