@@ -1,60 +1,114 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, Keyboard
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
-export default function TransactionPinScreen({ navigation }: any) {
+type Step = 'verify_old' | 'enter_new' | 'confirm_new' | 'verify_only';
+
+export default function TransactionPinScreen({ navigation, route }: any) {
   const { user } = useAuth();
-  const [pin, setPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [showPin, setShowPin] = useState(false);
+  const mode = route.params?.mode || 'setup'; // 'setup', 'verify', 'change'
+
+  // State
+  const [input, setInput] = useState('');
+  const [savedPin, setSavedPin] = useState(''); // Stores first entry during setup/change
+  const [step, setStep] = useState<Step>('verify_only');
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<'setup' | 'change' | 'disable'>('setup');
+  const [error, setError] = useState('');
 
-  const handleSetupPin = async () => {
-    if (pin !== confirmPin) {
-      Alert.alert('Error', 'PINs do not match');
-      return;
+  const inputRef = useRef<TextInput>(null);
+
+  // Initialize flow based on mode
+  useEffect(() => {
+    if (mode === 'setup') setStep('enter_new');
+    else if (mode === 'change') setStep('verify_old');
+    else setStep('verify_only');
+
+    setTimeout(() => inputRef.current?.focus(), 300);
+  }, [mode]);
+
+  const hashPin = (val: string) => {
+    let hash = 0;
+    for (let i = 0; i < val.length; i++) {
+      hash = ((hash << 5) - hash) + val.charCodeAt(i);
     }
+    return Math.abs(hash).toString();
+  };
 
-    if (!/^\d{4}$/.test(pin)) {
-      Alert.alert('Error', 'PIN must be 4 digits');
-      return;
-    }
-
-    if (!user) return;
-
+  const handleComplete = async (finalPin: string) => {
+    if (!user?.id) return setError('User not found');
     setLoading(true);
+    setError('');
+
     try {
-      await SecureStore.setItemAsync('transaction_pin', pin);
-      
-      const { error } = await supabase
-        .from('profiles')
-        .update({ has_transaction_pin: true })
-        .eq('id', user.id);
+      if (step === 'verify_only' || step === 'verify_old') {
+        // --- VERIFICATION LOGIC ---
+        const { data } = await supabase.from('profiles').select('transaction_pin').eq('id', user.id).single();
+        
+        if (hashPin(finalPin) === data?.transaction_pin) {
+          if (step === 'verify_old') {
+            setStep('enter_new');
+            setInput('');
+          } else {
+            navigation.goBack(); // Success for standard verification
+          }
+        } else {
+          setError(step === 'verify_old' ? 'Current PIN incorrect' : 'Invalid PIN');
+          setInput('');
+        }
+      } 
+      else if (step === 'enter_new') {
+        // --- SETUP/CHANGE FIRST STEP ---
+        setSavedPin(finalPin);
+        setStep('confirm_new');
+        setInput('');
+      } 
+      else if (step === 'confirm_new') {
+        // --- FINAL CONFIRMATION ---
+        if (finalPin !== savedPin) {
+          setError('PINs do not match');
+          setStep('enter_new');
+          setInput('');
+        } else {
+          const { error: dbError } = await supabase.from('profiles').update({
+            transaction_pin: hashPin(finalPin),
+            transaction_pin_enabled: true
+          }).eq('id', user.id);
 
-      if (error) throw error;
-
-      Alert.alert('Success', 'Transaction PIN set successfully', [
-        { text: 'OK', onPress: () => navigation.goBack() }
-      ]);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to set PIN');
+          if (dbError) throw dbError;
+          Alert.alert('Success', 'PIN updated successfully', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+      setInput('');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleChangeText = (text: string) => {
+    const numericText = text.replace(/[^0-9]/g, '');
+    setInput(numericText);
+    if (numericText.length === 4) {
+      handleComplete(numericText);
+    }
+  };
+
+  const getLabels = () => {
+    switch (step) {
+      case 'verify_old': return { t: 'Current PIN', s: 'Enter your current PIN' };
+      case 'enter_new': return { t: 'New PIN', s: 'Create a 4-digit PIN' };
+      case 'confirm_new': return { t: 'Confirm PIN', s: 'Re-enter your new PIN' };
+      default: return { t: 'Verify PIN', s: 'Enter PIN to continue' };
+    }
+  };
+
+  const labels = getLabels();
 
   return (
     <LinearGradient colors={['#2563eb', '#1e40af']} style={styles.container}>
@@ -63,66 +117,31 @@ export default function TransactionPinScreen({ navigation }: any) {
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <View style={styles.iconContainer}>
-          <Ionicons name="key" size={48} color="#2563eb" />
+        <Ionicons name="lock-closed" size={48} color="white" style={{ marginBottom: 20 }} />
+        <Text style={styles.title}>{labels.t}</Text>
+        <Text style={styles.subtitle}>{labels.s}</Text>
+
+        <View style={styles.circlesContainer}>
+          {[0, 1, 2, 3].map((i) => (
+            <View key={i} style={[styles.circle, input.length > i && styles.circleFilled]}>
+               {input.length > i && <View style={styles.dot} />}
+            </View>
+          ))}
         </View>
-        
-        <Text style={styles.title}>Transaction PIN</Text>
-        <Text style={styles.subtitle}>
-          Set a 4-digit PIN for secure transactions
-        </Text>
 
-        <View style={styles.formCard}>
-          <Text style={styles.label}>Enter PIN</Text>
-          <View style={styles.pinContainer}>
-            <TextInput
-              style={styles.pinInput}
-              placeholder="****"
-              maxLength={4}
-              keyboardType="numeric"
-              secureTextEntry={!showPin}
-              value={pin}
-              onChangeText={setPin}
-              textAlign="center"
-            />
-            <TouchableOpacity onPress={() => setShowPin(!showPin)} style={styles.eyeButton}>
-              <Ionicons name={showPin ? 'eye-off-outline' : 'eye-outline'} size={20} color="#6b7280" />
-            </TouchableOpacity>
-          </View>
+        <TextInput
+          ref={inputRef}
+          style={styles.hiddenInput}
+          maxLength={4}
+          keyboardType="number-pad"
+          value={input}
+          onChangeText={handleChangeText}
+          autoFocus
+          secureTextEntry
+        />
 
-          <Text style={styles.label}>Confirm PIN</Text>
-          <View style={styles.pinContainer}>
-            <TextInput
-              style={styles.pinInput}
-              placeholder="****"
-              maxLength={4}
-              keyboardType="numeric"
-              secureTextEntry={!showPin}
-              value={confirmPin}
-              onChangeText={setConfirmPin}
-              textAlign="center"
-            />
-          </View>
-
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleSetupPin}
-            disabled={loading || !pin || !confirmPin}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.buttonText}>Set Transaction PIN</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.infoBox}>
-            <Ionicons name="shield-checkmark" size={16} color="#6b7280" />
-            <Text style={styles.infoText}>
-              Your PIN is securely encrypted. Never share it with anyone.
-            </Text>
-          </View>
-        </View>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {loading && <ActivityIndicator style={{ marginTop: 20 }} color="white" />}
       </View>
     </LinearGradient>
   );
@@ -130,18 +149,14 @@ export default function TransactionPinScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  backButton: { position: 'absolute', top: 50, left: 20, zIndex: 10, padding: 8 },
-  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-  iconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 24 },
-  title: { fontSize: 24, fontWeight: 'bold', color: 'white', textAlign: 'center', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: '#bfdbfe', textAlign: 'center', marginBottom: 32 },
-  formCard: { backgroundColor: 'white', borderRadius: 16, padding: 24 },
-  label: { fontSize: 14, fontWeight: '500', color: '#4b5563', marginBottom: 8, marginTop: 16 },
-  pinContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, backgroundColor: '#f9fafb' },
-  pinInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 16, fontSize: 18, letterSpacing: 8, textAlign: 'center' },
-  eyeButton: { padding: 12 },
-  button: { backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
-  buttonText: { color: 'white', fontSize: 16, fontWeight: '600' },
-  infoBox: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20, padding: 12, backgroundColor: '#f3f4f6', borderRadius: 8 },
-  infoText: { flex: 1, fontSize: 11, color: '#6b7280' },
+  backButton: { position: 'absolute', top: 50, left: 20, padding: 10, zIndex: 5 },
+  content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  title: { fontSize: 26, fontWeight: 'bold', color: 'white', marginBottom: 8 },
+  subtitle: { fontSize: 15, color: '#bfdbfe', marginBottom: 40 },
+  circlesContainer: { flexDirection: 'row', gap: 15 },
+  circle: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderColor: 'white', justifyContent: 'center', alignItems: 'center' },
+  circleFilled: { backgroundColor: 'white' },
+  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#1e40af' },
+  hiddenInput: { position: 'absolute', opacity: 0, width: 0, height: 0 },
+  errorText: { color: '#ffcfcf', marginTop: 20, fontWeight: '600' }
 });

@@ -10,12 +10,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-// import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../services/supabase';
 
 export default function SignupScreen({ navigation }: any) {
@@ -26,54 +24,6 @@ export default function SignupScreen({ navigation }: any) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [avatar, setAvatar] = useState<string | null>(null);
-  const [avatarError, setAvatarError] = useState(false);
-
-  // const takeSelfie = async () => {
-  //   const { status } = await ImagePicker.requestCameraPermissionsAsync();
-  //   if (status !== 'granted') {
-  //     Alert.alert('Permission needed', 'Camera access is required to take a selfie');
-  //     return;
-  //   }
-
-  //   const result = await ImagePicker.launchCameraAsync({
-  //     allowsEditing: true,
-  //     aspect: [1, 1],
-  //     quality: 0.8,
-  //   });
-
-  //   if (!result.canceled && result.assets[0]) {
-  //     setAvatar(result.assets[0].uri);
-  //     setAvatarError(false);
-  //   }
-  // };
-
-  const uploadAvatar = async (userId: string): Promise<string | null> => {
-    if (!avatar) return null;
-
-    try {
-      const response = await fetch(avatar);
-      const blob = await response.blob();
-      const fileExt = 'jpg';
-      const fileName = `${userId}-${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, blob);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      return publicUrl;
-    } catch (error) {
-      console.error('Error uploading avatar:', error);
-      return null;
-    }
-  };
 
   const handleSignup = async () => {
     // Validate all fields
@@ -89,13 +39,6 @@ export default function SignupScreen({ navigation }: any) {
 
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
-
-    // Validate selfie is taken
-    if (!avatar) {
-      setAvatarError(true);
-      Alert.alert('Selfie Required', 'Please take a selfie to complete your registration');
       return;
     }
 
@@ -117,17 +60,6 @@ export default function SignupScreen({ navigation }: any) {
       if (error) throw error;
 
       if (data.user) {
-        // Upload avatar (required)
-        const avatarUrl = await uploadAvatar(data.user.id);
-        if (avatarUrl) {
-          await supabase
-            .from('profiles')
-            .update({ avatar_url: avatarUrl })
-            .eq('id', data.user.id);
-        } else {
-          throw new Error('Failed to upload selfie');
-        }
-
         Alert.alert(
           'Success',
           'Account created successfully! Please check your email for verification.',
@@ -163,31 +95,6 @@ export default function SignupScreen({ navigation }: any) {
           <View style={styles.formContainer}>
             <Text style={styles.welcomeText}>Get Started</Text>
             <Text style={styles.subtitle}>Create your free account</Text>
-
-            {/* Selfie Section - Required */}
-            <View style={styles.selfieSection}>
-              <Text style={[styles.selfieLabel, avatarError && styles.selfieLabelError]}>
-                Profile Photo <Text style={styles.requiredStar}>*</Text>
-              </Text>
-              {/* <TouchableOpacity 
-                style={[styles.selfieButton, avatarError && styles.selfieButtonError]} 
-                onPress={takeSelfie}
-              >
-                {avatar ? (
-                  <Image source={{ uri: avatar }} style={styles.selfiePreview} />
-                ) : (
-                  <>
-                    <Ionicons name="camera" size={32} color={avatarError ? "#ef4444" : "#2563eb"} />
-                    <Text style={[styles.selfieText, avatarError && styles.selfieTextError]}>
-                      Take a Selfie (Required)
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity> */}
-              {avatarError && (
-                <Text style={styles.errorText}>Selfie is required to create an account</Text>
-              )}
-            </View>
 
             <View style={styles.inputContainer}>
               <Ionicons name="person-outline" size={20} color="#6b7280" />
@@ -290,16 +197,6 @@ const styles = StyleSheet.create({
   formContainer: { backgroundColor: 'white', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
   welcomeText: { fontSize: 24, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 },
   subtitle: { fontSize: 14, color: '#6b7280', marginBottom: 24 },
-  selfieSection: { alignItems: 'center', marginBottom: 20 },
-  selfieLabel: { fontSize: 14, color: '#6b7280', marginBottom: 8 },
-  selfieLabelError: { color: '#ef4444' },
-  requiredStar: { color: '#ef4444' },
-  selfieButton: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#e5e7eb', overflow: 'hidden' },
-  selfieButtonError: { borderColor: '#ef4444', borderWidth: 2 },
-  selfiePreview: { width: 120, height: 120, borderRadius: 60 },
-  selfieText: { fontSize: 12, color: '#2563eb', marginTop: 8 },
-  selfieTextError: { color: '#ef4444' },
-  errorText: { fontSize: 12, color: '#ef4444', marginTop: 4 },
   inputContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 12, marginBottom: 16, backgroundColor: '#f9fafb' },
   input: { flex: 1, paddingVertical: 12, paddingHorizontal: 8, fontSize: 16, color: '#1f2937' },
   signupButton: { backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 16, marginTop: 8 },

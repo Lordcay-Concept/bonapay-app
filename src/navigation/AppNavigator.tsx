@@ -7,6 +7,7 @@ import DrawerNavigator from './DrawerNavigator';
 import AdminNavigator from './AdminNavigator';
 import { supabase } from '../services/supabase';
 import TransactionDetailScreen from '../screens/main/TransactionDetailScreen';
+import TransactionPinScreen from '../screens/main/TransactionPinScreen'; 
 
 const Stack = createStackNavigator();
 
@@ -50,6 +51,17 @@ export default function AppNavigator() {
         ) : (
           <Stack.Screen name="Main" component={DrawerNavigator} />
         )}
+        
+        <Stack.Screen 
+          name="TransactionDetail" 
+          component={TransactionDetailScreen} 
+          options={{ presentation: 'modal', headerShown: false }}
+        />
+        <Stack.Screen 
+          name="TransactionPin" 
+          component={TransactionPinScreen} 
+          options={{ presentation: 'modal', headerShown: false }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
